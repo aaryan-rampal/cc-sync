@@ -42,6 +42,14 @@ def capture_context():
         print("Skipping context capture...")
         return
 
+    # Check if there are any .jsonl files
+    from cc_context.core.git_ops import get_claude_repo_path
+    claude_path = get_claude_repo_path()
+    session_files = list(claude_path.glob("*.jsonl"))
+    if not session_files:
+        print("No .jsonl files found in your Claude context directory. You have never run Claude Code in this folder!")
+        return
+
     # Get current commit SHA from main repo
     try:
         main_commit_sha = get_current_commit_sha()

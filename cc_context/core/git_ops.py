@@ -86,6 +86,12 @@ def add_session_files() -> bool:
 
     claude_path = get_claude_repo_path()
 
+    # Check if there are any .jsonl files to add
+    session_files = list(claude_path.glob("*.jsonl"))
+    if not session_files:
+        # No session files to add - this is fine, not an error
+        return True
+
     try:
         subprocess.run(
             ["git", "add", "*.jsonl"],
