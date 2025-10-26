@@ -51,7 +51,17 @@ def init_claude_repo(skip_initial_commit: bool = False) -> bool:
         if skip_initial_commit:
             return True
 
-        # Create initial commit with all existing sessions
+        # Create an empty initial commit as the base state
+        # This represents "no context" and serves as a fallback
+        subprocess.run(
+            ["git", "commit", "--allow-empty", "-m", "Empty initial state"],
+            cwd=claude_path,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+
+        # If there are existing session files, create a second commit with them
         session_files = list(claude_path.glob("*.jsonl"))
 
         if session_files:
@@ -78,7 +88,7 @@ def init_claude_repo(skip_initial_commit: bool = False) -> bool:
                 # Fallback if we can't get the main repo SHA
                 commit_message = "Initial Claude sessions"
 
-            # Create initial commit
+            # Create commit with existing sessions
             subprocess.run(
                 ["git", "commit", "-m", commit_message],
                 cwd=claude_path,
