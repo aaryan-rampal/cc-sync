@@ -16,6 +16,7 @@ setup(
             "cc-status=cc_context.cli.status:main",
             "cc-restore=cc_context.cli.restore:main",
             "cc-list=cc_context.cli.list_contexts:main",
+            "cc-sync=cc_context.cli.sync:main",
         ],
     },
 )
