@@ -425,3 +425,91 @@ def pop_stash(stash_ref: str) -> bool:
     except subprocess.CalledProcessError as e:
         print(f"Error popping stash: {e.stderr}")
         return False
+
+
+def get_main_repo_branch() -> str | None:
+    """
+    Get the current branch name from the main repository (CWD).
+
+    Returns:
+        str | None: Branch name, "HEAD" if detached, or None on error
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        return result.stdout.strip()
+
+    except subprocess.CalledProcessError:
+        return None
+
+
+def is_detached_head(branch_name: str | None) -> bool:
+    """
+    Check if the branch name indicates detached HEAD state.
+
+    Args:
+        branch_name: Branch name from git rev-parse
+
+    Returns:
+        bool: True if detached HEAD, False otherwise
+    """
+    return branch_name == "HEAD"
+
+
+def create_or_checkout_branch(branch_name: str, commit_sha: str | None = None) -> bool:
+    """
+    Create or checkout a branch in the Claude repo.
+
+    If commit_sha is provided, uses 'git checkout -B' to create/reset the branch
+    to that commit. Otherwise, just checks out the branch if it exists or creates it.
+
+    Args:
+        branch_name: Name of the branch to create/checkout
+        commit_sha: Optional commit SHA to reset the branch to
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    if not is_claude_repo_initialized():
+        return False
+
+    claude_path = get_claude_repo_path()
+
+    try:
+        if commit_sha:
+            # Create or reset branch to specific commit
+            subprocess.run(
+                ["git", "checkout", "-B", branch_name, commit_sha],
+                cwd=claude_path,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+        else:
+            # Try to checkout existing branch first
+            result = subprocess.run(
+                ["git", "checkout", branch_name],
+                cwd=claude_path,
+                capture_output=True,
+                text=True,
+            )
+
+            if result.returncode != 0:
+                # Branch doesn't exist, create it
+                subprocess.run(
+                    ["git", "checkout", "-b", branch_name],
+                    cwd=claude_path,
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+
+        return True
+
+    except subprocess.CalledProcessError as e:
+        print(f"Error creating/checking out branch: {e.stderr}")
+        return False

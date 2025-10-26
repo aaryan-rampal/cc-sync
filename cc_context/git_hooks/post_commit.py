@@ -12,7 +12,10 @@ import sys
 from cc_context.core.git_ops import (
     is_claude_repo_initialized,
     add_session_files,
-    commit_sessions
+    commit_sessions,
+    get_main_repo_branch,
+    is_detached_head,
+    create_or_checkout_branch
 )
 
 
@@ -32,9 +35,10 @@ def capture_context():
     Capture Claude Code context by committing sessions to the Claude repo.
 
     This function:
-    1. Gets the current main repo commit SHA
-    2. Stages all .jsonl files in the Claude directory
-    3. Commits them with a message linking to the main repo commit
+    1. Gets the current main repo commit SHA and branch
+    2. Ensures Claude repo is on the same branch (skips if detached HEAD)
+    3. Stages all .jsonl files in the Claude directory
+    4. Commits them with a message linking to the main repo commit
     """
     # Check if Claude repo is initialized
     if not is_claude_repo_initialized():
@@ -50,11 +54,28 @@ def capture_context():
         print("No .jsonl files found in your Claude context directory. You have never run Claude Code in this folder!")
         return
 
+    # Get current branch from main repo
+    main_branch = get_main_repo_branch()
+    if not main_branch:
+        print("Error: Failed to get current branch from main repo", file=sys.stderr)
+        return
+
+    # Skip if in detached HEAD state
+    if is_detached_head(main_branch):
+        print("Note: In detached HEAD state. Context capture only works with named branches.")
+        print("Create a branch first with: git checkout -b <branch-name>")
+        return
+
     # Get current commit SHA from main repo
     try:
         main_commit_sha = get_current_commit_sha()
     except subprocess.CalledProcessError as e:
         print(f"Error: Failed to get commit SHA: {e}", file=sys.stderr)
+        return
+
+    # Ensure Claude repo is on the same branch as main repo
+    if not create_or_checkout_branch(main_branch):
+        print(f"Error: Failed to checkout branch '{main_branch}' in Claude repo", file=sys.stderr)
         return
 
     # Stage all session files

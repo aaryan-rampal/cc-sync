@@ -9,6 +9,7 @@ This command is called by the post-checkout git hook to:
 """
 
 import sys
+import subprocess
 from cc_context.core.git_ops import (
     is_claude_repo_initialized,
     stash_sessions,
@@ -16,13 +17,18 @@ from cc_context.core.git_ops import (
     get_initial_commit,
     checkout_commit,
     find_stash_by_message,
-    pop_stash
+    pop_stash,
+    get_main_repo_branch,
+    is_detached_head,
+    create_or_checkout_branch
 )
 
 
 def sync_checkout(old_sha: str, new_sha: str, checkout_type: str):
     """
     Synchronize Claude sessions repository when main repo checks out a commit.
+
+    Only syncs for named branch checkouts. Ignores detached HEAD checkouts.
 
     Args:
         old_sha: The commit SHA we're coming from
@@ -38,7 +44,18 @@ def sync_checkout(old_sha: str, new_sha: str, checkout_type: str):
         print("Note: Claude sessions repo not initialized. Run 'cc-init' to enable session sync.")
         return
 
-    print(f"Syncing Claude sessions: {old_sha[:7]} → {new_sha[:7]}")
+    # Get the new branch from main repo
+    new_branch = get_main_repo_branch()
+    if not new_branch:
+        print("Error: Failed to get current branch from main repo")
+        return
+
+    # Skip if in detached HEAD state
+    if is_detached_head(new_branch):
+        print("Note: Checked out to detached HEAD. Context sync only works with named branches.")
+        return
+
+    print(f"Syncing Claude sessions: {old_sha[:7]} → {new_sha[:7]} (branch: {new_branch})")
 
     # Step 1: Stash uncommitted sessions with old SHA
     stash_message = f"sessions-for-{old_sha}"
@@ -50,20 +67,28 @@ def sync_checkout(old_sha: str, new_sha: str, checkout_type: str):
     claude_commit = find_commit_by_main_sha(new_sha)
 
     if not claude_commit:
-        # No commit found for new SHA - checkout initial commit
-        print(f"No sessions found for commit {new_sha[:7]}, checking out initial state")
-        claude_commit = get_initial_commit()
+        # No commit found for new SHA
+        print(f"No sessions found for commit {new_sha[:7]}")
 
-        if not claude_commit:
-            print("Error: Could not find initial commit in Claude repo")
+        # Try to find the initial commit on this branch
+        initial_commit = get_initial_commit()
+        if not initial_commit:
+            print("Error: Could not find any commits in Claude repo")
             return
 
-    # Step 3: Checkout the Claude commit
-    if not checkout_commit(claude_commit):
-        print(f"Error: Failed to checkout Claude commit {claude_commit[:7]}")
-        return
+        # Create/checkout the branch at the initial commit
+        if not create_or_checkout_branch(new_branch, initial_commit):
+            print(f"Error: Failed to checkout branch '{new_branch}' in Claude repo")
+            return
 
-    print(f"✓ Checked out Claude sessions for {new_sha[:7]}")
+        print(f"✓ Checked out branch '{new_branch}' at initial state")
+    else:
+        # Step 3: Create/checkout the branch at the found commit
+        if not create_or_checkout_branch(new_branch, claude_commit):
+            print(f"Error: Failed to checkout branch '{new_branch}' in Claude repo")
+            return
+
+        print(f"✓ Checked out branch '{new_branch}' at Claude sessions for {new_sha[:7]}")
 
     # Step 4: Look for stash with new SHA and pop if exists
     stash_pattern = f"sessions-for-{new_sha}"
