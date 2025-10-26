@@ -163,16 +163,20 @@ def pull_from_remote(remote_name: str = "supabase", branch: str = "main") -> boo
 
     claude_path = get_claude_repo_path()
 
-    # Get the remote URL
-    url = get_remote_url(remote_name)
-    if not url:
-        print(f"Error: Remote '{remote_name}' not found", file=sys.stderr)
+    # Get Supabase configuration
+    config = get_supabase_config()
+    if not config:
+        print("Error: Missing Supabase configuration in environment variables", file=sys.stderr)
+        print("Required: SUPABASE_URL, SUPABASE_SERVICE_KEY, SUPABASE_BUCKET", file=sys.stderr)
         return False
+
+    url, _, bucket = config
+    download_url = f"{url}/storage/v1/object/public/{bucket}/repo.bundle"
 
     try:
         # Download the bundle from Supabase
         print(f"Downloading bundle from remote...")
-        response = requests.get(url, timeout=30)
+        response = requests.get(download_url, timeout=30)
 
         if response.status_code == 404:
             print("No existing data in remote")
