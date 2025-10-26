@@ -199,18 +199,18 @@ def pull_from_remote(remote_name: str = "supabase", branch: str = "main", verbos
             bundle_path = tmp.name
 
         try:
-            # Fetch from bundle
+            # Fetch from bundle into FETCH_HEAD (avoids updating current branch directly)
             subprocess.run(
-                ["git", "fetch", bundle_path, f"{branch}:{branch}"],
+                ["git", "fetch", bundle_path, branch],
                 cwd=claude_path,
                 capture_output=True,
                 text=True,
                 check=True
             )
 
-            # Merge with strategy to prefer remote changes on conflict
+            # Merge FETCH_HEAD with strategy to prefer remote changes on conflict
             subprocess.run(
-                ["git", "merge", branch, "-X", "theirs", "--allow-unrelated-histories"],
+                ["git", "merge", "FETCH_HEAD", "-X", "theirs", "--allow-unrelated-histories"],
                 cwd=claude_path,
                 capture_output=True,
                 text=True,
