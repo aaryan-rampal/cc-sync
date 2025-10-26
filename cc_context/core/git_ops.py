@@ -592,3 +592,46 @@ def get_commit_parents(commit_sha: str, in_main_repo: bool = True) -> list[str]:
 
     except subprocess.CalledProcessError:
         return []
+
+
+def find_context_for_commit_or_ancestor(main_sha: str, max_depth: int = 100) -> str | None:
+    """
+    Find Claude context for a commit or its nearest ancestor.
+
+    Walks up the git history to find the first commit that has associated
+    Claude context. This allows new commits to inherit context from their
+    parent commits.
+
+    Args:
+        main_sha: The main repository commit SHA to start searching from
+        max_depth: Maximum number of ancestors to check (default: 100)
+
+    Returns:
+        str | None: Claude repo commit SHA if found, None otherwise
+    """
+    if not is_claude_repo_initialized():
+        return None
+
+    visited = set()
+    to_check = [main_sha]
+    depth = 0
+
+    while to_check and depth < max_depth:
+        current_sha = to_check.pop(0)
+
+        # Avoid infinite loops in case of weird git history
+        if current_sha in visited:
+            continue
+        visited.add(current_sha)
+
+        # Check if this commit has Claude context
+        claude_commit = find_commit_by_main_sha(current_sha)
+        if claude_commit:
+            return claude_commit
+
+        # Get parents and add them to the queue
+        parents = get_commit_parents(current_sha, in_main_repo=True)
+        to_check.extend(parents)
+        depth += 1
+
+    return None
