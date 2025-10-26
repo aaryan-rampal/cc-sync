@@ -1,13 +1,71 @@
 """
 Git remote sync operations for the Claude sessions repository.
 
-This module handles syncing the sessions repo with a remote (Supabase) storage.
+This module handles syncing the sessions repo with a remote (Supabase) storage
+using Git bundles for compatibility with object storage services.
 """
 
 import subprocess
 import sys
+import tempfile
+import os
 from pathlib import Path
 from cc_context.core.git_ops import get_claude_repo_path, is_claude_repo_initialized
+import requests
+
+
+def get_supabase_config() -> tuple[str, str, str] | None:
+    """
+    Get Supabase configuration from environment variables.
+
+    Returns:
+        tuple[str, str, str] | None: (url, service_key, bucket) or None if any are missing
+    """
+    url = os.environ.get("SUPABASE_URL")
+    service_key = os.environ.get("SUPABASE_SERVICE_KEY")
+    bucket = os.environ.get("SUPABASE_BUCKET")
+
+    if not all([url, service_key, bucket]):
+        return None
+
+    return (url.rstrip('/'), service_key, bucket)
+
+
+def get_storage_url(bucket: str, filename: str = "repo.bundle") -> str:
+    """
+    Construct Supabase Storage API URL.
+
+    Args:
+        bucket: Bucket name
+        filename: File name (default: "repo.bundle")
+
+    Returns:
+        str: Full Storage API URL
+    """
+    config = get_supabase_config()
+    if not config:
+        raise ValueError("Supabase configuration not found in environment variables")
+
+    url, _, bucket_name = config
+    return f"{url}/storage/v1/object/public/{bucket_name}/{filename}"
+
+
+def get_auth_headers() -> dict[str, str]:
+    """
+    Get authorization headers for Supabase Storage API.
+
+    Returns:
+        dict[str, str]: Headers with Authorization and Content-Type
+    """
+    config = get_supabase_config()
+    if not config:
+        raise ValueError("Supabase configuration not found in environment variables")
+
+    _, service_key, _ = config
+    return {
+        "Authorization": f"Bearer {service_key}",
+        "Content-Type": "application/octet-stream"
+    }
 
 
 def get_remote_url(remote_name: str = "supabase") -> str | None:
@@ -90,7 +148,7 @@ def add_remote(url: str, remote_name: str = "supabase") -> bool:
 
 def pull_from_remote(remote_name: str = "supabase", branch: str = "main") -> bool:
     """
-    Pull from the remote, preferring remote changes on conflict.
+    Pull from the remote using Git bundles.
 
     Args:
         remote_name: Name of the remote (default: "supabase")
@@ -105,26 +163,65 @@ def pull_from_remote(remote_name: str = "supabase", branch: str = "main") -> boo
 
     claude_path = get_claude_repo_path()
 
-    try:
-        # Pull with strategy to prefer remote changes on conflict
-        subprocess.run(
-            ["git", "pull", remote_name, branch, "-X", "theirs"],
-            cwd=claude_path,
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        print(f"✓ Pulled changes from '{remote_name}/{branch}'")
-        return True
+    # Get the remote URL
+    url = get_remote_url(remote_name)
+    if not url:
+        print(f"Error: Remote '{remote_name}' not found", file=sys.stderr)
+        return False
 
+    try:
+        # Download the bundle from Supabase
+        print(f"Downloading bundle from remote...")
+        response = requests.get(url, timeout=30)
+
+        if response.status_code == 404:
+            print("No existing data in remote")
+            return False
+
+        response.raise_for_status()
+
+        # Save bundle to temp file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".bundle") as tmp:
+            tmp.write(response.content)
+            bundle_path = tmp.name
+
+        try:
+            # Fetch from bundle
+            subprocess.run(
+                ["git", "fetch", bundle_path, f"{branch}:{branch}"],
+                cwd=claude_path,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+
+            # Merge with strategy to prefer remote changes on conflict
+            subprocess.run(
+                ["git", "merge", branch, "-X", "theirs", "--allow-unrelated-histories"],
+                cwd=claude_path,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+
+            print(f"✓ Pulled changes from '{remote_name}/{branch}'")
+            return True
+
+        finally:
+            # Clean up temp file
+            Path(bundle_path).unlink(missing_ok=True)
+
+    except requests.RequestException as e:
+        print(f"Error downloading bundle: {e}", file=sys.stderr)
+        return False
     except subprocess.CalledProcessError as e:
-        # Pull failed - could be because remote is empty
+        print(f"Error applying bundle: {e.stderr}", file=sys.stderr)
         return False
 
 
 def push_to_remote(remote_name: str = "supabase", branch: str = "main") -> bool:
     """
-    Push to the remote.
+    Push to the remote using Git bundles.
 
     Args:
         remote_name: Name of the remote (default: "supabase")
@@ -139,19 +236,51 @@ def push_to_remote(remote_name: str = "supabase", branch: str = "main") -> bool:
 
     claude_path = get_claude_repo_path()
 
+    # Get the remote URL
+    url = get_remote_url(remote_name)
+    if not url:
+        print(f"Error: Remote '{remote_name}' not found", file=sys.stderr)
+        return False
+
     try:
-        subprocess.run(
-            ["git", "push", "-u", remote_name, branch],
-            cwd=claude_path,
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        print(f"✓ Pushed changes to '{remote_name}/{branch}'")
-        return True
+        # Create a bundle with all refs
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".bundle") as tmp:
+            bundle_path = tmp.name
+
+        try:
+            # Create bundle
+            print(f"Creating bundle...")
+            subprocess.run(
+                ["git", "bundle", "create", bundle_path, "--all"],
+                cwd=claude_path,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+
+            # Upload bundle to Supabase
+            print(f"Uploading bundle to remote...")
+            with open(bundle_path, 'rb') as bundle_file:
+                response = requests.put(
+                    url,
+                    data=bundle_file,
+                    headers={"Content-Type": "application/octet-stream"},
+                    timeout=60
+                )
+                response.raise_for_status()
+
+            print(f"✓ Pushed changes to '{remote_name}/{branch}'")
+            return True
+
+        finally:
+            # Clean up temp file
+            Path(bundle_path).unlink(missing_ok=True)
 
     except subprocess.CalledProcessError as e:
-        print(f"Error pushing to remote: {e.stderr}", file=sys.stderr)
+        print(f"Error creating bundle: {e.stderr}", file=sys.stderr)
+        return False
+    except requests.RequestException as e:
+        print(f"Error uploading bundle: {e}", file=sys.stderr)
         return False
 
 
