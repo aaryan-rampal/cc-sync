@@ -309,25 +309,37 @@ def push_to_remote(remote_name: str = "supabase", branch: str = "main") -> bool:
         return False
 
 
-def sync_with_remote(url: str, remote_name: str = "supabase", branch: str = "main") -> bool:
+def sync_with_remote(remote_name: str = "supabase", branch: str = "main") -> bool:
     """
-    Sync the Claude sessions repo with a remote.
+    Sync the Claude sessions repo with a remote using Supabase Storage.
 
     This function:
-    1. Adds/updates the remote
+    1. Validates Supabase configuration from environment variables
     2. Tries to pull from remote
     3. If pull fails (empty remote), pushes local changes
 
     Args:
-        url: The remote URL
         remote_name: Name of the remote (default: "supabase")
         branch: Branch name (default: "main")
 
     Returns:
         bool: True if successful, False otherwise
+
+    Required environment variables:
+        SUPABASE_URL: Supabase project URL
+        SUPABASE_SERVICE_KEY: Service role key for authentication
+        SUPABASE_BUCKET: Storage bucket name
     """
-    # Add/update remote
-    if not add_remote(url, remote_name):
+    # Validate Supabase configuration
+    config = get_supabase_config()
+    if not config:
+        print("Error: Missing Supabase configuration in environment variables", file=sys.stderr)
+        print("", file=sys.stderr)
+        print("Required environment variables:", file=sys.stderr)
+        print("  SUPABASE_URL=https://your-project.supabase.co", file=sys.stderr)
+        print("  SUPABASE_SERVICE_KEY=your-service-role-key", file=sys.stderr)
+        print("  SUPABASE_BUCKET=your-bucket-name", file=sys.stderr)
+        print("", file=sys.stderr)
         return False
 
     # Try to pull
