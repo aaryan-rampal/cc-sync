@@ -236,11 +236,14 @@ def push_to_remote(remote_name: str = "supabase", branch: str = "main") -> bool:
 
     claude_path = get_claude_repo_path()
 
-    # Get the remote URL
-    url = get_remote_url(remote_name)
-    if not url:
-        print(f"Error: Remote '{remote_name}' not found", file=sys.stderr)
+    # Get Supabase configuration
+    config = get_supabase_config()
+    if not config:
+        print("Error: Missing Supabase configuration in environment variables", file=sys.stderr)
+        print("Required: SUPABASE_URL, SUPABASE_SERVICE_KEY, SUPABASE_BUCKET", file=sys.stderr)
         return False
+
+    url, service_key, bucket = config
 
     try:
         # Create a bundle with all refs
@@ -258,15 +261,33 @@ def push_to_remote(remote_name: str = "supabase", branch: str = "main") -> bool:
                 check=True
             )
 
-            # Upload bundle to Supabase
+            # Upload bundle to Supabase Storage
             print(f"Uploading bundle to remote...")
+            upload_url = f"{url}/storage/v1/object/{bucket}/repo.bundle"
+
             with open(bundle_path, 'rb') as bundle_file:
-                response = requests.put(
-                    url,
-                    data=bundle_file,
-                    headers={"Content-Type": "application/octet-stream"},
+                # Try POST first (for new files)
+                response = requests.post(
+                    upload_url,
+                    files={'file': bundle_file},
+                    headers={"Authorization": f"Bearer {service_key}"},
                     timeout=60
                 )
+
+                # If file exists, use PUT to update
+                if response.status_code == 409:
+                    bundle_file.seek(0)
+                    update_url = f"{url}/storage/v1/object/{bucket}/repo.bundle"
+                    response = requests.put(
+                        update_url,
+                        data=bundle_file,
+                        headers={
+                            "Authorization": f"Bearer {service_key}",
+                            "Content-Type": "application/octet-stream"
+                        },
+                        timeout=60
+                    )
+
                 response.raise_for_status()
 
             print(f"✓ Pushed changes to '{remote_name}/{branch}'")
