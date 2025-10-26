@@ -214,10 +214,10 @@ def get_claude_commit_sha() -> str | None:
 
 def has_uncommitted_changes() -> bool:
     """
-    Check if the Claude repo has uncommitted changes.
+    Check if the Claude repo has uncommitted changes or untracked files.
 
     Returns:
-        bool: True if there are uncommitted changes, False otherwise
+        bool: True if there are uncommitted changes or untracked files, False otherwise
     """
     if not is_claude_repo_initialized():
         return False
@@ -238,9 +238,40 @@ def has_uncommitted_changes() -> bool:
         return False
 
 
+def clean_untracked_files() -> bool:
+    """
+    Remove all untracked files and directories from the Claude repo.
+
+    This ensures a clean working directory when switching branches.
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    if not is_claude_repo_initialized():
+        return False
+
+    claude_path = get_claude_repo_path()
+
+    try:
+        subprocess.run(
+            ["git", "clean", "-fd"],
+            cwd=claude_path,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        return True
+
+    except subprocess.CalledProcessError as e:
+        print(f"Error cleaning untracked files: {e.stderr}")
+        return False
+
+
 def stash_sessions(message: str) -> bool:
     """
     Create a stash with the given message (only if there are changes).
+
+    Includes both tracked changes and untracked files.
 
     Args:
         message: Stash message
@@ -251,7 +282,7 @@ def stash_sessions(message: str) -> bool:
     if not is_claude_repo_initialized():
         return False
 
-    # Only stash if there are changes
+    # Only stash if there are changes or untracked files
     if not has_uncommitted_changes():
         return True
 
@@ -259,7 +290,7 @@ def stash_sessions(message: str) -> bool:
 
     try:
         subprocess.run(
-            ["git", "stash", "push", "-m", message],
+            ["git", "stash", "push", "-u", "-m", message],
             cwd=claude_path,
             capture_output=True,
             text=True,

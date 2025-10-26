@@ -20,7 +20,8 @@ from cc_context.core.git_ops import (
     pop_stash,
     get_main_repo_branch,
     is_detached_head,
-    create_or_checkout_branch
+    create_or_checkout_branch,
+    clean_untracked_files
 )
 
 
@@ -89,6 +90,11 @@ def sync_checkout(old_sha: str, new_sha: str, checkout_type: str):
             return
 
         print(f"✓ Checked out branch '{new_branch}' at Claude sessions for {new_sha[:7]}")
+
+    # Step 3.5: Clean any untracked files before restoring stash
+    if not clean_untracked_files():
+        print("Warning: Failed to clean untracked files")
+        # Continue anyway - not critical
 
     # Step 4: Look for stash with new SHA and pop if exists
     stash_pattern = f"sessions-for-{new_sha}"
