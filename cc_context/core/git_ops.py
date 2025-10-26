@@ -64,9 +64,23 @@ def init_claude_repo(skip_initial_commit: bool = False) -> bool:
                 check=True
             )
 
+            # Get the current commit SHA from the main repository
+            try:
+                result = subprocess.run(
+                    ["git", "rev-parse", "HEAD"],
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                main_commit_sha = result.stdout.strip()
+                commit_message = f"Initial Claude sessions\nContext for main repo commit {main_commit_sha}"
+            except subprocess.CalledProcessError:
+                # Fallback if we can't get the main repo SHA
+                commit_message = "Initial Claude sessions"
+
             # Create initial commit
             subprocess.run(
-                ["git", "commit", "-m", "Initial Claude sessions"],
+                ["git", "commit", "-m", commit_message],
                 cwd=claude_path,
                 capture_output=True,
                 text=True,
@@ -544,3 +558,37 @@ def create_or_checkout_branch(branch_name: str, commit_sha: str | None = None) -
     except subprocess.CalledProcessError as e:
         print(f"Error creating/checking out branch: {e.stderr}")
         return False
+
+
+def get_commit_parents(commit_sha: str, in_main_repo: bool = True) -> list[str]:
+    """
+    Get the parent commit SHAs for a given commit.
+
+    Args:
+        commit_sha: The commit SHA to get parents for
+        in_main_repo: If True, query main repo (CWD), else query Claude repo
+
+    Returns:
+        list[str]: List of parent commit SHAs (empty if no parents or error)
+    """
+    if not in_main_repo and not is_claude_repo_initialized():
+        return []
+
+    cwd = None if in_main_repo else get_claude_repo_path()
+
+    try:
+        result = subprocess.run(
+            ["git", "rev-list", "--parents", "-n", "1", commit_sha],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+
+        # Output format: "commit_sha parent1 parent2 ..."
+        # Split and return all but the first (which is the commit itself)
+        parts = result.stdout.strip().split()
+        return parts[1:] if len(parts) > 1 else []
+
+    except subprocess.CalledProcessError:
+        return []
