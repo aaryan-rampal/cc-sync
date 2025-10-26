@@ -22,9 +22,12 @@ def is_claude_repo_initialized() -> bool:
     return git_dir.exists() and git_dir.is_dir()
 
 
-def init_claude_repo() -> bool:
+def init_claude_repo(skip_initial_commit: bool = False) -> bool:
     """
     Initialize a git repository in the Claude sessions directory.
+
+    Args:
+        skip_initial_commit: If True, skip creating the initial commit (default: False)
 
     Returns:
         bool: True if successful, False otherwise
@@ -43,6 +46,10 @@ def init_claude_repo() -> bool:
             text=True,
             check=True
         )
+
+        # Skip initial commit if requested
+        if skip_initial_commit:
+            return True
 
         # Create initial commit with all existing sessions
         session_files = list(claude_path.glob("*.jsonl"))
