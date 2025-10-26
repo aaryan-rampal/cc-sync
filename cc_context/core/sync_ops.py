@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import os
+import threading
 from pathlib import Path
 from cc_context.core.git_ops import get_claude_repo_path, is_claude_repo_initialized
 import requests
@@ -150,19 +151,21 @@ def add_remote(url: str, remote_name: str = "supabase") -> bool:
         return False
 
 
-def pull_from_remote(remote_name: str = "supabase", branch: str = "main") -> bool:
+def pull_from_remote(remote_name: str = "supabase", branch: str = "main", verbose: bool = False) -> bool:
     """
     Pull from the remote using Git bundles.
 
     Args:
         remote_name: Name of the remote (default: "supabase")
         branch: Branch name (default: "main")
+        verbose: Show progress messages (default: False)
 
     Returns:
         bool: True if successful, False otherwise
     """
     if not is_claude_repo_initialized():
-        print("Error: Claude repo not initialized", file=sys.stderr)
+        if verbose:
+            print("Error: Claude repo not initialized", file=sys.stderr)
         return False
 
     claude_path = get_claude_repo_path()
@@ -170,20 +173,22 @@ def pull_from_remote(remote_name: str = "supabase", branch: str = "main") -> boo
     # Get Supabase configuration
     config = get_supabase_config()
     if not config:
-        print("Error: Missing Supabase configuration in environment variables", file=sys.stderr)
-        print("Required: SUPABASE_URL, SUPABASE_SERVICE_KEY, SUPABASE_BUCKET", file=sys.stderr)
+        if verbose:
+            print("Error: Missing Supabase configuration", file=sys.stderr)
         return False
 
-    url, _, bucket = config
-    download_url = f"{url}/storage/v1/object/public/{bucket}/repo.bundle"
+    url, service_key, bucket = config
+    download_url = f"{url}/storage/v1/object/{bucket}/repo.bundle"
 
     try:
-        # Download the bundle from Supabase
-        print(f"Downloading bundle from remote...")
-        response = requests.get(download_url, timeout=30)
+        # Download the bundle from Supabase with authentication
+        response = requests.get(
+            download_url,
+            headers={"Authorization": f"Bearer {service_key}"},
+            timeout=30
+        )
 
         if response.status_code == 404:
-            print("No existing data in remote")
             return False
 
         response.raise_for_status()
@@ -212,7 +217,8 @@ def pull_from_remote(remote_name: str = "supabase", branch: str = "main") -> boo
                 check=True
             )
 
-            print(f"✓ Pulled changes from '{remote_name}/{branch}'")
+            if verbose:
+                print(f"✓ Pulled from remote")
             return True
 
         finally:
@@ -220,26 +226,30 @@ def pull_from_remote(remote_name: str = "supabase", branch: str = "main") -> boo
             Path(bundle_path).unlink(missing_ok=True)
 
     except requests.RequestException as e:
-        print(f"Error downloading bundle: {e}", file=sys.stderr)
+        if verbose:
+            print(f"Error downloading bundle: {e}", file=sys.stderr)
         return False
     except subprocess.CalledProcessError as e:
-        print(f"Error applying bundle: {e.stderr}", file=sys.stderr)
+        if verbose:
+            print(f"Error applying bundle: {e.stderr}", file=sys.stderr)
         return False
 
 
-def push_to_remote(remote_name: str = "supabase", branch: str = "main") -> bool:
+def push_to_remote(remote_name: str = "supabase", branch: str = "main", verbose: bool = False) -> bool:
     """
-    Push to the remote using Git bundles.
+    Push to the remote using Git bundles. Always force overwrites the remote bundle.
 
     Args:
         remote_name: Name of the remote (default: "supabase")
         branch: Branch name (default: "main")
+        verbose: Show progress messages (default: False)
 
     Returns:
         bool: True if successful, False otherwise
     """
     if not is_claude_repo_initialized():
-        print("Error: Claude repo not initialized", file=sys.stderr)
+        if verbose:
+            print("Error: Claude repo not initialized", file=sys.stderr)
         return False
 
     claude_path = get_claude_repo_path()
@@ -247,8 +257,8 @@ def push_to_remote(remote_name: str = "supabase", branch: str = "main") -> bool:
     # Get Supabase configuration
     config = get_supabase_config()
     if not config:
-        print("Error: Missing Supabase configuration in environment variables", file=sys.stderr)
-        print("Required: SUPABASE_URL, SUPABASE_SERVICE_KEY, SUPABASE_BUCKET", file=sys.stderr)
+        if verbose:
+            print("Error: Missing Supabase configuration", file=sys.stderr)
         return False
 
     url, service_key, bucket = config
@@ -260,7 +270,6 @@ def push_to_remote(remote_name: str = "supabase", branch: str = "main") -> bool:
 
         try:
             # Create bundle
-            print(f"Creating bundle...")
             subprocess.run(
                 ["git", "bundle", "create", bundle_path, "--all"],
                 cwd=claude_path,
@@ -269,36 +278,23 @@ def push_to_remote(remote_name: str = "supabase", branch: str = "main") -> bool:
                 check=True
             )
 
-            # Upload bundle to Supabase Storage
-            print(f"Uploading bundle to remote...")
+            # Upload bundle to Supabase Storage using PUT (force overwrite)
             upload_url = f"{url}/storage/v1/object/{bucket}/repo.bundle"
 
             with open(bundle_path, 'rb') as bundle_file:
-                # Try POST first (for new files)
-                response = requests.post(
+                response = requests.put(
                     upload_url,
-                    files={'file': bundle_file},
-                    headers={"Authorization": f"Bearer {service_key}"},
+                    data=bundle_file,
+                    headers={
+                        "Authorization": f"Bearer {service_key}",
+                        "Content-Type": "application/octet-stream"
+                    },
                     timeout=60
                 )
-
-                # If file exists, use PUT to update
-                if response.status_code == 409:
-                    bundle_file.seek(0)
-                    update_url = f"{url}/storage/v1/object/{bucket}/repo.bundle"
-                    response = requests.put(
-                        update_url,
-                        data=bundle_file,
-                        headers={
-                            "Authorization": f"Bearer {service_key}",
-                            "Content-Type": "application/octet-stream"
-                        },
-                        timeout=60
-                    )
-
                 response.raise_for_status()
 
-            print(f"✓ Pushed changes to '{remote_name}/{branch}'")
+            if verbose:
+                print(f"✓ Pushed to remote")
             return True
 
         finally:
@@ -306,14 +302,37 @@ def push_to_remote(remote_name: str = "supabase", branch: str = "main") -> bool:
             Path(bundle_path).unlink(missing_ok=True)
 
     except subprocess.CalledProcessError as e:
-        print(f"Error creating bundle: {e.stderr}", file=sys.stderr)
+        if verbose:
+            print(f"Error creating bundle: {e.stderr}", file=sys.stderr)
         return False
     except requests.RequestException as e:
-        print(f"Error uploading bundle: {e}", file=sys.stderr)
+        if verbose:
+            print(f"Error uploading bundle: {e}", file=sys.stderr)
         return False
 
 
-def sync_with_remote(remote_name: str = "supabase", branch: str = "main") -> bool:
+def push_to_remote_async(remote_name: str = "supabase", branch: str = "main", verbose: bool = False) -> threading.Thread:
+    """
+    Push to the remote asynchronously in a background thread.
+
+    Args:
+        remote_name: Name of the remote (default: "supabase")
+        branch: Branch name (default: "main")
+        verbose: Show progress messages (default: False)
+
+    Returns:
+        threading.Thread: The background thread handling the push
+    """
+    thread = threading.Thread(
+        target=push_to_remote,
+        args=(remote_name, branch, verbose),
+        daemon=True
+    )
+    thread.start()
+    return thread
+
+
+def sync_with_remote(remote_name: str = "supabase", branch: str = "main", verbose: bool = True) -> bool:
     """
     Sync the Claude sessions repo with a remote using Supabase Storage.
 
@@ -325,6 +344,7 @@ def sync_with_remote(remote_name: str = "supabase", branch: str = "main") -> boo
     Args:
         remote_name: Name of the remote (default: "supabase")
         branch: Branch name (default: "main")
+        verbose: Show progress messages (default: True)
 
     Returns:
         bool: True if successful, False otherwise
@@ -337,23 +357,19 @@ def sync_with_remote(remote_name: str = "supabase", branch: str = "main") -> boo
     # Validate Supabase configuration
     config = get_supabase_config()
     if not config:
-        print("Error: Missing Supabase configuration in environment variables", file=sys.stderr)
-        print("", file=sys.stderr)
-        print("Required environment variables:", file=sys.stderr)
-        print("  SUPABASE_URL=https://your-project.supabase.co", file=sys.stderr)
-        print("  SUPABASE_SERVICE_KEY=your-service-role-key", file=sys.stderr)
-        print("  SUPABASE_BUCKET=your-bucket-name", file=sys.stderr)
-        print("", file=sys.stderr)
+        if verbose:
+            print("Error: Missing Supabase configuration", file=sys.stderr)
         return False
 
     # Try to pull
-    if pull_from_remote(remote_name, branch):
+    if pull_from_remote(remote_name, branch, verbose):
         # Pull succeeded
         return True
     else:
         # Pull failed, try to push
-        print(f"No existing data in remote, pushing local changes...")
-        return push_to_remote(remote_name, branch)
+        if verbose:
+            print(f"Pushing local changes...")
+        return push_to_remote(remote_name, branch, verbose)
 
 
 def has_remote(remote_name: str = "supabase") -> bool:

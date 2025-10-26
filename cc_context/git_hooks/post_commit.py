@@ -69,13 +69,10 @@ def capture_context():
         print("Error: Failed to commit sessions", file=sys.stderr)
         return
 
-    # Auto-push to remote if it exists
-    from cc_context.core.sync_ops import has_remote, push_to_remote
+    # Auto-push to remote if it exists (async, non-blocking)
+    from cc_context.core.sync_ops import has_remote, push_to_remote_async
     if has_remote():
-        if push_to_remote():
-            pass  # Success message already printed by push_to_remote
-        else:
-            print("Warning: Failed to push to remote", file=sys.stderr)
+        push_to_remote_async(verbose=False)  # Push in background, silent
 
 
 def main():

@@ -58,53 +58,29 @@ def sync():
     # Check if Claude repo is initialized
     if is_claude_repo_initialized():
         # Mode A: Normal sync (Claude repo exists)
-        print(f"Main repository: {repo_root}")
-        print(f"Claude sessions directory: {claude_path}")
-        print()
-        print("Syncing with remote...")
-        print()
-
-        if sync_with_remote():
-            print()
-            print("=" * 60)
-            print("🎉 Successfully synced with remote!")
-            print("=" * 60)
+        if sync_with_remote(verbose=True):
+            print("✓ Synced successfully")
             return 0
         else:
-            print()
-            print("❌ Failed to sync with remote", file=sys.stderr)
+            print("❌ Sync failed", file=sys.stderr)
             return 1
 
     else:
         # Mode B: Init + pull (Claude repo doesn't exist)
-        print(f"Main repository: {repo_root}")
-        print(f"Claude sessions directory: {claude_path}")
-        print()
-        print("Claude sessions repo not initialized. Initializing and pulling from remote...")
-        print()
+        print("Initializing Claude sessions repo...")
 
         # Initialize without initial commit
         claude_path.mkdir(parents=True, exist_ok=True)
         if not init_claude_repo(skip_initial_commit=True):
-            print("❌ Failed to initialize Claude sessions repo", file=sys.stderr)
+            print("❌ Failed to initialize", file=sys.stderr)
             return 1
-
-        print("✓ Initialized Claude sessions repo")
 
         # Pull from remote
-        if not pull_from_remote():
-            print("❌ Failed to pull from remote. Is the remote empty?", file=sys.stderr)
+        if not pull_from_remote(verbose=True):
+            print("❌ Failed to pull from remote", file=sys.stderr)
             return 1
 
-        print()
-        print("=" * 60)
-        print("🎉 Successfully initialized and pulled from remote!")
-        print("=" * 60)
-        print()
-        print("Next steps:")
-        print("  • Install git hooks: cc-install-hook")
-        print("    This will automatically sync after each commit")
-        print()
+        print("✓ Initialized and synced successfully")
         return 0
 
 
