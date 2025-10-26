@@ -21,7 +21,8 @@ from cc_context.core.git_ops import (
     get_main_repo_branch,
     is_detached_head,
     create_or_checkout_branch,
-    clean_untracked_files
+    clean_untracked_files,
+    find_context_for_commit_or_ancestor
 )
 
 
@@ -64,25 +65,25 @@ def sync_checkout(old_sha: str, new_sha: str, checkout_type: str):
         print("Warning: Failed to stash current sessions")
         # Continue anyway - we want to at least try to checkout
 
-    # Step 2: Find Claude commit for new SHA
-    claude_commit = find_commit_by_main_sha(new_sha)
+    # Step 2: Find Claude commit for new SHA or its ancestors
+    claude_commit = find_context_for_commit_or_ancestor(new_sha)
 
     if not claude_commit:
-        # No commit found for new SHA
-        print(f"No sessions found for commit {new_sha[:7]}")
+        # No commit found for new SHA or any ancestor
+        print(f"No sessions found for commit {new_sha[:7]} or its ancestors")
 
-        # Try to find the initial commit on this branch
+        # Try to find the initial commit as fallback
         initial_commit = get_initial_commit()
         if not initial_commit:
             print("Error: Could not find any commits in Claude repo")
             return
 
-        # Create/checkout the branch at the initial commit
+        # Create/checkout the branch at the initial commit (empty state)
         if not create_or_checkout_branch(new_branch, initial_commit):
             print(f"Error: Failed to checkout branch '{new_branch}' in Claude repo")
             return
 
-        print(f"✓ Checked out branch '{new_branch}' at initial state")
+        print(f"✓ Checked out branch '{new_branch}' at initial state (no context)")
     else:
         # Step 3: Create/checkout the branch at the found commit
         if not create_or_checkout_branch(new_branch, claude_commit):
