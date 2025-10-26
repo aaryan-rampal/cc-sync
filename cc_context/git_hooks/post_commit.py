@@ -67,6 +67,15 @@ def capture_context():
         print(f"✓ Claude sessions committed for main repo commit {main_commit_sha[:7]}")
     else:
         print("Error: Failed to commit sessions", file=sys.stderr)
+        return
+
+    # Auto-push to remote if it exists
+    from cc_context.core.sync_ops import has_remote, push_to_remote
+    if has_remote():
+        if push_to_remote():
+            pass  # Success message already printed by push_to_remote
+        else:
+            print("Warning: Failed to push to remote", file=sys.stderr)
 
 
 def main():
