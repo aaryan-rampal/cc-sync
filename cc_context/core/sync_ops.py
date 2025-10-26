@@ -12,6 +12,10 @@ import os
 from pathlib import Path
 from cc_context.core.git_ops import get_claude_repo_path, is_claude_repo_initialized
 import requests
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 def get_supabase_config() -> tuple[str, str, str] | None:

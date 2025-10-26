@@ -6,7 +6,10 @@ setup(
     description="Claude Code Context Manager - Git-integrated conversation history",
     packages=find_packages(),
     python_requires=">=3.8",
-    install_requires=[],
+    install_requires=[
+        "requests>=2.25.0",
+        "python-dotenv>=0.19.0",
+    ],
     entry_points={
         "console_scripts": [
             "cc-init=cc_context.cli.init:main",
