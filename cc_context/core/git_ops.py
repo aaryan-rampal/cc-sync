@@ -288,9 +288,9 @@ def find_commit_by_main_sha(main_sha: str) -> str | None:
     claude_path = get_claude_repo_path()
 
     try:
-        # Search for commit messages containing the main SHA
+        # Search for commit messages containing the main SHA across all branches
         result = subprocess.run(
-            ["git", "log", "--grep", main_sha, "--format=%H", "-n", "1"],
+            ["git", "log", "--all", "--grep", main_sha, "--format=%H", "-n", "1"],
             cwd=claude_path,
             capture_output=True,
             text=True,
