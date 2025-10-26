@@ -338,8 +338,8 @@ def sync_with_remote(remote_name: str = "supabase", branch: str = "main", verbos
 
     This function:
     1. Validates Supabase configuration from environment variables
-    2. Tries to pull from remote
-    3. If pull fails (empty remote), pushes local changes
+    2. Pulls from remote (if exists), applying changes with 'theirs' strategy
+    3. Force pushes local changes back to remote
 
     Args:
         remote_name: Name of the remote (default: "supabase")
@@ -361,15 +361,11 @@ def sync_with_remote(remote_name: str = "supabase", branch: str = "main", verbos
             print("Error: Missing Supabase configuration", file=sys.stderr)
         return False
 
-    # Try to pull
-    if pull_from_remote(remote_name, branch, verbose):
-        # Pull succeeded
-        return True
-    else:
-        # Pull failed, try to push
-        if verbose:
-            print(f"Pushing local changes...")
-        return push_to_remote(remote_name, branch, verbose)
+    # Try to pull from remote (ignore failure if remote doesn't exist)
+    pull_from_remote(remote_name, branch, verbose)
+
+    # Always push local changes after pull
+    return push_to_remote(remote_name, branch, verbose)
 
 
 def has_remote(remote_name: str = "supabase") -> bool:
