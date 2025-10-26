@@ -6,16 +6,17 @@ This command sets up and syncs the Claude sessions repo with a remote storage.
 """
 
 import sys
+import os
 from cc_context.core.git_ops import (
     get_claude_repo_path,
     is_claude_repo_initialized,
     init_claude_repo
 )
-from cc_context.core.sync_ops import sync_with_remote, pull_from_remote, add_remote
+from cc_context.core.sync_ops import sync_with_remote, pull_from_remote, get_supabase_config
 from cc_context.utils.path import get_repo_root
 
 
-def sync(supabase_url: str):
+def sync():
     """
     Sync Claude sessions with a remote Supabase bucket.
 
@@ -23,9 +24,27 @@ def sync(supabase_url: str):
     1. If Claude repo exists: sync with remote (pull or push)
     2. If Claude repo doesn't exist: init without initial commit, then pull
 
-    Args:
-        supabase_url: The Supabase bucket URL to use as remote
+    Requires environment variables:
+        SUPABASE_URL: Supabase project URL
+        SUPABASE_SERVICE_KEY: Service role key for authentication
+        SUPABASE_BUCKET: Storage bucket name
     """
+    # Validate Supabase configuration
+    if not get_supabase_config():
+        print("❌ Error: Missing Supabase configuration", file=sys.stderr)
+        print("", file=sys.stderr)
+        print("Required environment variables:", file=sys.stderr)
+        print("  SUPABASE_URL=https://your-project.supabase.co", file=sys.stderr)
+        print("  SUPABASE_SERVICE_KEY=your-service-role-key", file=sys.stderr)
+        print("  SUPABASE_BUCKET=your-bucket-name", file=sys.stderr)
+        print("", file=sys.stderr)
+        print("Example setup:", file=sys.stderr)
+        print("  export SUPABASE_URL=https://roohevslraawtssekwie.supabase.co", file=sys.stderr)
+        print("  export SUPABASE_SERVICE_KEY=eyJhbGci...", file=sys.stderr)
+        print("  export SUPABASE_BUCKET=claude-sessions", file=sys.stderr)
+        print("", file=sys.stderr)
+        return 1
+
     try:
         # Verify we're in a git repository
         repo_root = get_repo_root()
@@ -45,7 +64,7 @@ def sync(supabase_url: str):
         print("Syncing with remote...")
         print()
 
-        if sync_with_remote(supabase_url):
+        if sync_with_remote():
             print()
             print("=" * 60)
             print("🎉 Successfully synced with remote!")
@@ -72,11 +91,6 @@ def sync(supabase_url: str):
 
         print("✓ Initialized Claude sessions repo")
 
-        # Add remote
-        if not add_remote(supabase_url):
-            print("❌ Failed to add remote", file=sys.stderr)
-            return 1
-
         # Pull from remote
         if not pull_from_remote():
             print("❌ Failed to pull from remote. Is the remote empty?", file=sys.stderr)
@@ -96,16 +110,29 @@ def sync(supabase_url: str):
 
 def main():
     """Entry point for cc-sync command."""
-    if len(sys.argv) < 2:
-        print("Usage: cc-sync <supabase_url>", file=sys.stderr)
+    if len(sys.argv) > 1 and sys.argv[1] in ["-h", "--help", "help"]:
+        print("Usage: cc-sync")
         print()
-        print("Example:")
-        print("  cc-sync https://your-project.supabase.co/storage/v1/...")
+        print("Sync Claude sessions with a remote Supabase bucket.")
         print()
-        return 1
+        print("Setup (one-time):")
+        print("  1. Create a bucket in Supabase dashboard (e.g., 'claude-sessions')")
+        print("  2. Set environment variables:")
+        print()
+        print("     export SUPABASE_URL=https://your-project.supabase.co")
+        print("     export SUPABASE_SERVICE_KEY=your-service-role-key")
+        print("     export SUPABASE_BUCKET=your-bucket-name")
+        print()
+        print("  3. Add to your shell profile (~/.bashrc, ~/.zshrc, etc.) to persist")
+        print()
+        print("Usage:")
+        print("  cc-sync")
+        print()
+        print("The command will automatically sync with your configured Supabase bucket.")
+        print()
+        return 0
 
-    supabase_url = sys.argv[1]
-    sys.exit(sync(supabase_url))
+    sys.exit(sync())
 
 
 if __name__ == "__main__":
