@@ -5,6 +5,7 @@ from pathlib import Path
 def encode_path(repo_path: str) -> str:
     abs_path = os.path.abspath(repo_path)
     encoded = abs_path.replace(os.sep, '-')
+    encoded = encoded.replace("_", "-")
     return encoded
 
 
